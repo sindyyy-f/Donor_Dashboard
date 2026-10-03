@@ -1,8 +1,9 @@
 import pandas as pd
 import streamlit as st
-import plotly.express as px  # NEW: needed for charts
+import plotly.express as px
 
 from database import get_connection
+
 
 st.set_page_config(
     page_title="Donor Dashboard",
@@ -11,6 +12,9 @@ st.set_page_config(
 
 st.title("Nonprofit Donor Engagement & Retention Dashboard")
 st.write("Overview of synthetic donor and donation data.")
+
+
+# Load data from MySQL
 
 connection = get_connection()
 cursor = connection.cursor(dictionary=True)
@@ -24,14 +28,27 @@ donations = pd.DataFrame(cursor.fetchall())
 cursor.close()
 connection.close()
 
+
+# Prepare the data
+
 donations["donation_amount"] = pd.to_numeric(
     donations["donation_amount"]
 )
+
+donations["donation_date"] = pd.to_datetime(
+    donations["donation_date"]
+)
+
+
+# Calculate dashboard metrics
 
 total_donors = len(donors)
 number_of_donations = len(donations)
 total_donated = donations["donation_amount"].sum()
 average_donation = donations["donation_amount"].mean()
+
+
+# Display metric cards
 
 column1, column2, column3, column4 = st.columns(4)
 
@@ -39,6 +56,9 @@ column1.metric("Total Donors", total_donors)
 column2.metric("Number of Donations", number_of_donations)
 column3.metric("Total Donated", f"${total_donated:,.2f}")
 column4.metric("Average Donation", f"${average_donation:,.2f}")
+
+
+# Chart 1: Total donations by campaign
 
 campaign_totals = (
     donations.groupby("campaign", as_index=False)["donation_amount"]
@@ -58,6 +78,48 @@ campaign_chart = px.bar(
 )
 
 st.plotly_chart(campaign_chart, use_container_width=True)
+
+
+# Chart 2: Monthly donations for the most recent year
+
+latest_year = int(donations["donation_date"].dt.year.max())
+
+latest_year_donations = donations[
+    donations["donation_date"].dt.year == latest_year
+].copy()
+
+latest_year_donations["month_number"] = (
+    latest_year_donations["donation_date"].dt.month
+)
+
+monthly_totals = (
+    latest_year_donations.groupby("month_number")["donation_amount"]
+    .sum()
+    .reindex(range(1, 13), fill_value=0)
+    .reset_index()
+)
+
+monthly_totals["month"] = pd.to_datetime(
+    monthly_totals["month_number"],
+    format="%m"
+).dt.strftime("%b")
+
+monthly_chart = px.line(
+    monthly_totals,
+    x="month",
+    y="donation_amount",
+    markers=True,
+    title=f"Monthly Donation Trends ({latest_year})",
+    labels={
+        "month": "Month",
+        "donation_amount": "Donation Amount ($)"
+    }
+)
+
+st.plotly_chart(monthly_chart, use_container_width=True)
+
+
+# Display recent donation records
 
 st.subheader("Recent Donation Records")
 st.dataframe(donations.tail(10), use_container_width=True)
