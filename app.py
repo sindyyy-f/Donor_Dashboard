@@ -273,12 +273,17 @@ st.dataframe(
 )
 
 
-# Display recent donation records
+# Display the 10 most recent donation records
+
+recent_donations = donations.sort_values(
+    by=["donation_date", "donation_id"],
+    ascending=[False, False]
+).head(10)
 
 st.subheader("Recent Donation Records")
 
 st.dataframe(
-    donations.tail(10),
+    recent_donations,
     use_container_width=True,
     hide_index=True
 )
