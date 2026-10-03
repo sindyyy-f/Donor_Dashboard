@@ -118,6 +118,7 @@ monthly_chart = px.line(
 
 st.plotly_chart(monthly_chart, use_container_width=True)
 
+
 # Donor engagement calculation
 
 reference_date = donations["donation_date"].max()
@@ -143,6 +144,9 @@ donor_engagement["engagement_status"] = donor_engagement[
     else "Active"
 )
 
+
+# Chart 3: Active and at-risk donors
+
 status_counts = (
     donor_engagement.groupby("engagement_status")
     .size()
@@ -163,10 +167,16 @@ engagement_chart = px.pie(
 
 st.plotly_chart(engagement_chart, use_container_width=True)
 
-st.caption(
-    f"At-risk donors have not donated since "
-    f"{at_risk_cutoff.strftime('%B %d, %Y')}."
-)
+
+# Explain the engagement definitions
+
+st.markdown("### Engagement Status Key")
+
+st.markdown(
+    """
+    🟢 **Active:** Donor has donated within the last 9 months.  
+    🔴 **At Risk:** Donor has not donated within the last 9 months.
+    """)
 
 # Table of at-risk donors
 
@@ -196,7 +206,13 @@ st.dataframe(
     hide_index=True
 )
 
+
 # Display recent donation records
 
 st.subheader("Recent Donation Records")
-st.dataframe(donations.tail(10), use_container_width=True)
+
+st.dataframe(
+    donations.tail(10),
+    use_container_width=True,
+    hide_index=True
+)
