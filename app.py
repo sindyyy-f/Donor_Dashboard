@@ -47,6 +47,48 @@ number_of_donations = len(donations)
 total_donated = donations["donation_amount"].sum()
 average_donation = donations["donation_amount"].mean()
 
+# Calculate rolling 12-month donor retention
+
+retention_reference_date = donations["donation_date"].max()
+
+current_period_start = (
+    retention_reference_date - pd.DateOffset(months=12)
+)
+
+previous_period_start = (
+    current_period_start - pd.DateOffset(months=12)
+)
+
+previous_period_donors = set(
+    donations.loc[
+        (donations["donation_date"] >= previous_period_start)
+        & (donations["donation_date"] < current_period_start),
+        "donor_id"
+    ]
+)
+
+current_period_donors = set(
+    donations.loc[
+        (donations["donation_date"] >= current_period_start)
+        & (donations["donation_date"] <= retention_reference_date),
+        "donor_id"
+    ]
+)
+
+retained_donors = previous_period_donors.intersection(
+    current_period_donors
+)
+
+previous_donor_count = len(previous_period_donors)
+retained_donor_count = len(retained_donors)
+
+if previous_donor_count > 0:
+    retention_rate = (
+        retained_donor_count / previous_donor_count
+    ) * 100
+else:
+    retention_rate = 0
+
 
 # Display metric cards
 
@@ -57,6 +99,30 @@ column2.metric("Number of Donations", number_of_donations)
 column3.metric("Total Donated", f"${total_donated:,.2f}")
 column4.metric("Average Donation", f"${average_donation:,.2f}")
 
+st.subheader("Donor Retention")
+
+retention_column1, retention_column2, retention_column3 = st.columns(3)
+
+retention_column1.metric(
+    "Previous 12-Month Donors",
+    previous_donor_count
+)
+
+retention_column2.metric(
+    "Retained Donors",
+    retained_donor_count
+)
+
+retention_column3.metric(
+    "Retention Rate",
+    f"{retention_rate:.1f}%"
+)
+
+st.caption(
+    "Retention rate is the percentage of donors from the previous "
+    "12-month period who also donated during the most recent "
+    "12-month period."
+)
 
 # Chart 1: Total donations by campaign
 
