@@ -168,6 +168,34 @@ st.caption(
     f"{at_risk_cutoff.strftime('%B %d, %Y')}."
 )
 
+# Table of at-risk donors
+
+at_risk_donors = donor_engagement[
+    donor_engagement["engagement_status"] == "At Risk"
+].copy()
+
+at_risk_donors = at_risk_donors[
+    [
+        "donor_id",
+        "donor_type",
+        "last_donation_date",
+        "engagement_status"
+    ]
+].sort_values("last_donation_date")
+
+at_risk_donors["last_donation_date"] = (
+    pd.to_datetime(at_risk_donors["last_donation_date"]).dt.date
+)
+
+st.subheader("Donors Needing Attention")
+st.metric("At-Risk Donors", len(at_risk_donors))
+
+st.dataframe(
+    at_risk_donors,
+    use_container_width=True,
+    hide_index=True
+)
+
 # Display recent donation records
 
 st.subheader("Recent Donation Records")
