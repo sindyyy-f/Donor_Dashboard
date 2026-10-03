@@ -1,5 +1,7 @@
 import pandas as pd
 import streamlit as st
+import plotly.express as px  # NEW: needed for charts
+
 from database import get_connection
 
 st.set_page_config(
@@ -37,6 +39,25 @@ column1.metric("Total Donors", total_donors)
 column2.metric("Number of Donations", number_of_donations)
 column3.metric("Total Donated", f"${total_donated:,.2f}")
 column4.metric("Average Donation", f"${average_donation:,.2f}")
+
+campaign_totals = (
+    donations.groupby("campaign", as_index=False)["donation_amount"]
+    .sum()
+    .sort_values("donation_amount", ascending=False)
+)
+
+campaign_chart = px.bar(
+    campaign_totals,
+    x="campaign",
+    y="donation_amount",
+    title="Total Donations by Campaign",
+    labels={
+        "campaign": "Campaign",
+        "donation_amount": "Donation Amount ($)"
+    }
+)
+
+st.plotly_chart(campaign_chart, use_container_width=True)
 
 st.subheader("Recent Donation Records")
 st.dataframe(donations.tail(10), use_container_width=True)
