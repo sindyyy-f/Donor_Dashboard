@@ -14,7 +14,8 @@ from sklearn.metrics import (
 from sklearn.model_selection import (
     StratifiedKFold,
     cross_val_score,
-    train_test_split)
+    train_test_split
+)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -44,24 +45,30 @@ def load_database_data():
 
 
 def build_training_data(donors, donations):
-    # The latest donation date in the dataset
+    # Latest donation date in the dataset
     outcome_end = donations["donation_date"].max()
 
-    # Move backward nine months to create the historical snapshot
+    # The future outcome period is nine months
     snapshot_date = outcome_end - pd.DateOffset(months=9)
 
-    # Only use information available on or before the snapshot
+    # Recent behavior is measured over the 12 months
+    # immediately before the snapshot
+    recent_period_start = (
+        snapshot_date - pd.DateOffset(months=12)
+    )
+
+    # Only information available by the snapshot is used
     historical_donations = donations[
         donations["donation_date"] <= snapshot_date
     ].copy()
 
-    # Use the following nine months to determine the outcome
+    # Donations during the following nine months
     outcome_donations = donations[
         (donations["donation_date"] > snapshot_date)
         & (donations["donation_date"] <= outcome_end)
     ].copy()
 
-    # Create one row of historical features per donor
+    # All historical behavior before the snapshot
     donor_features = (
         historical_donations.groupby("donor_id")
         .agg(
@@ -77,16 +84,61 @@ def build_training_data(donors, donations):
         snapshot_date - donor_features["last_donation_date"]
     ).dt.days
 
+    # Behavior during the 12 months before the snapshot
+    recent_donations = historical_donations[
+        (
+            historical_donations["donation_date"]
+            >= recent_period_start
+        )
+        & (
+            historical_donations["donation_date"]
+            <= snapshot_date
+        )
+    ].copy()
+
+    recent_features = (
+        recent_donations.groupby("donor_id")
+        .agg(
+            donations_last_12_months=(
+                "donation_id",
+                "count"
+            ),
+            amount_last_12_months=(
+                "donation_amount",
+                "sum"
+            )
+        )
+        .reset_index()
+    )
+
+    donor_features = donor_features.merge(
+        recent_features,
+        on="donor_id",
+        how="left"
+    )
+
+    donor_features[
+        [
+            "donations_last_12_months",
+            "amount_last_12_months"
+        ]
+    ] = donor_features[
+        [
+            "donations_last_12_months",
+            "amount_last_12_months"
+        ]
+    ].fillna(0)
+
     donor_features = donor_features.merge(
         donors[["donor_id", "donor_type"]],
         on="donor_id",
         how="left"
     )
 
-    # Donors who donated during the outcome period
+    # Donors who gave during the future outcome period
     future_donors = set(outcome_donations["donor_id"])
 
-    # 1 means At Risk, and 0 means Not At Risk
+    # 1 means At Risk; 0 means Not At Risk
     donor_features["at_risk"] = (
         ~donor_features["donor_id"].isin(future_donors)
     ).astype(int)
@@ -100,6 +152,8 @@ def train_and_evaluate_model(model_data):
         "total_donated",
         "average_donation",
         "days_since_last_donation",
+        "donations_last_12_months",
+        "amount_last_12_months",
         "donor_type"
     ]
 
@@ -107,7 +161,9 @@ def train_and_evaluate_model(model_data):
         "donation_count",
         "total_donated",
         "average_donation",
-        "days_since_last_donation"
+        "days_since_last_donation",
+        "donations_last_12_months",
+        "amount_last_12_months"
     ]
 
     categorical_features = ["donor_type"]
@@ -115,7 +171,6 @@ def train_and_evaluate_model(model_data):
     X = model_data[feature_columns]
     y = model_data["at_risk"]
 
-    # Reserve 20% of the donors for final testing
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -124,7 +179,6 @@ def train_and_evaluate_model(model_data):
         stratify=y
     )
 
-    # Standardize numeric features and encode donor type
     preprocessing = ColumnTransformer(
         transformers=[
             (
@@ -140,7 +194,6 @@ def train_and_evaluate_model(model_data):
         ]
     )
 
-    # Create the logistic regression pipeline
     model = Pipeline(
         steps=[
             ("preprocessing", preprocessing),
@@ -155,7 +208,6 @@ def train_and_evaluate_model(model_data):
         ]
     )
 
-    # Evaluate recall across five different groups of donors
     cross_validation = StratifiedKFold(
         n_splits=5,
         shuffle=True,
@@ -170,10 +222,8 @@ def train_and_evaluate_model(model_data):
         scoring="recall"
     )
 
-    # Train on the training group
     model.fit(X_train, y_train)
 
-    # Predict the reserved testing group
     predictions = model.predict(X_test)
 
     accuracy = accuracy_score(y_test, predictions)
@@ -218,9 +268,11 @@ def train_and_evaluate_model(model_data):
 def main():
     donors, donations = load_database_data()
 
-    model_data, snapshot_date, outcome_end = build_training_data(
-        donors,
-        donations
+    model_data, snapshot_date, outcome_end = (
+        build_training_data(
+            donors,
+            donations
+        )
     )
 
     results = train_and_evaluate_model(model_data)
@@ -228,6 +280,15 @@ def main():
     print("Historical snapshot:", snapshot_date.date())
     print("Outcome period ends:", outcome_end.date())
     print("Training donors:", len(model_data))
+
+    print("\nFeatures used:")
+    print("- Historical donation count")
+    print("- Historical total donated")
+    print("- Historical average donation")
+    print("- Days since last donation")
+    print("- Donations during the previous 12 months")
+    print("- Amount donated during the previous 12 months")
+    print("- Donor type")
 
     print("\nOutcome classes:")
     print(model_data["at_risk"].value_counts())
