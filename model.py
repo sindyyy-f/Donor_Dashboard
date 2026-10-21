@@ -20,6 +20,28 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
+FEATURE_COLUMNS = [
+    "donation_count",
+    "total_donated",
+    "average_donation",
+    "days_since_last_donation",
+    "donations_last_12_months",
+    "amount_last_12_months",
+    "donor_type"
+]
+
+NUMERIC_FEATURES = [
+    "donation_count",
+    "total_donated",
+    "average_donation",
+    "days_since_last_donation",
+    "donations_last_12_months",
+    "amount_last_12_months"
+]
+
+CATEGORICAL_FEATURES = ["donor_type"]
+
+
 def load_database_data():
     connection = get_connection()
     cursor = connection.cursor(dictionary=True)
@@ -44,33 +66,13 @@ def load_database_data():
     return donors, donations
 
 
-def build_training_data(donors, donations):
-    # Latest donation date in the dataset
-    outcome_end = donations["donation_date"].max()
-
-    # The future outcome period is nine months
-    snapshot_date = outcome_end - pd.DateOffset(months=9)
-
-    # Recent behavior is measured over the 12 months
-    # immediately before the snapshot
-    recent_period_start = (
-        snapshot_date - pd.DateOffset(months=12)
-    )
-
-    # Only information available by the snapshot is used
-    historical_donations = donations[
-        donations["donation_date"] <= snapshot_date
-    ].copy()
-
-    # Donations during the following nine months
-    outcome_donations = donations[
-        (donations["donation_date"] > snapshot_date)
-        & (donations["donation_date"] <= outcome_end)
-    ].copy()
-
-    # All historical behavior before the snapshot
+def build_donor_features(
+    donors,
+    available_donations,
+    reference_date
+):
     donor_features = (
-        historical_donations.groupby("donor_id")
+        available_donations.groupby("donor_id")
         .agg(
             donation_count=("donation_id", "count"),
             total_donated=("donation_amount", "sum"),
@@ -81,18 +83,21 @@ def build_training_data(donors, donations):
     )
 
     donor_features["days_since_last_donation"] = (
-        snapshot_date - donor_features["last_donation_date"]
+        reference_date - donor_features["last_donation_date"]
     ).dt.days
 
-    # Behavior during the 12 months before the snapshot
-    recent_donations = historical_donations[
+    recent_period_start = (
+        reference_date - pd.DateOffset(months=12)
+    )
+
+    recent_donations = available_donations[
         (
-            historical_donations["donation_date"]
+            available_donations["donation_date"]
             >= recent_period_start
         )
         & (
-            historical_donations["donation_date"]
-            <= snapshot_date
+            available_donations["donation_date"]
+            <= reference_date
         )
     ].copy()
 
@@ -135,10 +140,33 @@ def build_training_data(donors, donations):
         how="left"
     )
 
-    # Donors who gave during the future outcome period
+    return donor_features
+
+
+def build_training_data(donors, donations):
+    outcome_end = donations["donation_date"].max()
+
+    snapshot_date = (
+        outcome_end - pd.DateOffset(months=9)
+    )
+
+    historical_donations = donations[
+        donations["donation_date"] <= snapshot_date
+    ].copy()
+
+    outcome_donations = donations[
+        (donations["donation_date"] > snapshot_date)
+        & (donations["donation_date"] <= outcome_end)
+    ].copy()
+
+    donor_features = build_donor_features(
+        donors,
+        historical_donations,
+        snapshot_date
+    )
+
     future_donors = set(outcome_donations["donor_id"])
 
-    # 1 means At Risk; 0 means Not At Risk
     donor_features["at_risk"] = (
         ~donor_features["donor_id"].isin(future_donors)
     ).astype(int)
@@ -146,55 +174,35 @@ def build_training_data(donors, donations):
     return donor_features, snapshot_date, outcome_end
 
 
-def train_and_evaluate_model(model_data):
-    feature_columns = [
-        "donation_count",
-        "total_donated",
-        "average_donation",
-        "days_since_last_donation",
-        "donations_last_12_months",
-        "amount_last_12_months",
-        "donor_type"
-    ]
+def build_current_features(donors, donations):
+    prediction_date = donations["donation_date"].max()
 
-    numeric_features = [
-        "donation_count",
-        "total_donated",
-        "average_donation",
-        "days_since_last_donation",
-        "donations_last_12_months",
-        "amount_last_12_months"
-    ]
-
-    categorical_features = ["donor_type"]
-
-    X = model_data[feature_columns]
-    y = model_data["at_risk"]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.20,
-        random_state=42,
-        stratify=y
+    current_features = build_donor_features(
+        donors,
+        donations,
+        prediction_date
     )
 
+    return current_features, prediction_date
+
+
+def create_model_pipeline():
     preprocessing = ColumnTransformer(
         transformers=[
             (
                 "numeric",
                 StandardScaler(),
-                numeric_features
+                NUMERIC_FEATURES
             ),
             (
                 "categorical",
                 OneHotEncoder(handle_unknown="ignore"),
-                categorical_features
+                CATEGORICAL_FEATURES
             )
         ]
     )
 
-    model = Pipeline(
+    return Pipeline(
         steps=[
             ("preprocessing", preprocessing),
             (
@@ -208,6 +216,21 @@ def train_and_evaluate_model(model_data):
         ]
     )
 
+
+def train_and_evaluate_model(model_data):
+    X = model_data[FEATURE_COLUMNS]
+    y = model_data["at_risk"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.20,
+        random_state=42,
+        stratify=y
+    )
+
+    evaluation_model = create_model_pipeline()
+
     cross_validation = StratifiedKFold(
         n_splits=5,
         shuffle=True,
@@ -215,16 +238,16 @@ def train_and_evaluate_model(model_data):
     )
 
     cv_recall_scores = cross_val_score(
-        model,
+        evaluation_model,
         X,
         y,
         cv=cross_validation,
         scoring="recall"
     )
 
-    model.fit(X_train, y_train)
+    evaluation_model.fit(X_train, y_train)
 
-    predictions = model.predict(X_test)
+    predictions = evaluation_model.predict(X_test)
 
     accuracy = accuracy_score(y_test, predictions)
 
@@ -252,8 +275,12 @@ def train_and_evaluate_model(model_data):
         labels=[0, 1]
     )
 
+    # Train the final model using all 99 historical donors
+    final_model = create_model_pipeline()
+    final_model.fit(X, y)
+
     return {
-        "model": model,
+        "model": final_model,
         "accuracy": accuracy,
         "precision": precision,
         "recall": recall,
@@ -263,6 +290,48 @@ def train_and_evaluate_model(model_data):
         "predictions": predictions,
         "cv_recall_scores": cv_recall_scores
     }
+
+
+def predict_current_donor_risk(
+    trained_model,
+    current_features
+):
+    prediction_values = trained_model.predict(
+        current_features[FEATURE_COLUMNS]
+    )
+
+    prediction_probabilities = (
+        trained_model.predict_proba(
+            current_features[FEATURE_COLUMNS]
+        )[:, 1]
+    )
+
+    current_predictions = current_features[
+        [
+            "donor_id",
+            "donor_type",
+            "last_donation_date",
+            "days_since_last_donation",
+            "donation_count",
+            "donations_last_12_months"
+        ]
+    ].copy()
+
+    current_predictions["risk_probability"] = (
+        prediction_probabilities * 100
+    ).round(1)
+
+    current_predictions["ml_prediction"] = [
+        "At Risk" if value == 1 else "Not At Risk"
+        for value in prediction_values
+    ]
+
+    current_predictions = current_predictions.sort_values(
+        "risk_probability",
+        ascending=False
+    )
+
+    return current_predictions
 
 
 def main():
@@ -277,21 +346,21 @@ def main():
 
     results = train_and_evaluate_model(model_data)
 
+    current_features, prediction_date = (
+        build_current_features(
+            donors,
+            donations
+        )
+    )
+
+    current_predictions = predict_current_donor_risk(
+        results["model"],
+        current_features
+    )
+
     print("Historical snapshot:", snapshot_date.date())
     print("Outcome period ends:", outcome_end.date())
     print("Training donors:", len(model_data))
-
-    print("\nFeatures used:")
-    print("- Historical donation count")
-    print("- Historical total donated")
-    print("- Historical average donation")
-    print("- Days since last donation")
-    print("- Donations during the previous 12 months")
-    print("- Amount donated during the previous 12 months")
-    print("- Donor type")
-
-    print("\nOutcome classes:")
-    print(model_data["at_risk"].value_counts())
 
     print("\nModel performance:")
     print(f"Accuracy:  {results['accuracy']:.2%}")
@@ -325,6 +394,27 @@ def main():
             target_names=["Not At Risk", "At Risk"],
             zero_division=0
         )
+    )
+
+    print("Current prediction date:", prediction_date.date())
+
+    print("\nCurrent prediction counts:")
+    print(
+        current_predictions[
+            "ml_prediction"
+        ].value_counts()
+    )
+
+    print("\nTen highest predicted risks:")
+    print(
+        current_predictions[
+            [
+                "donor_id",
+                "donor_type",
+                "risk_probability",
+                "ml_prediction"
+            ]
+        ].head(10).to_string(index=False)
     )
 
 
