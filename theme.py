@@ -7,6 +7,10 @@ import streamlit as st
 def apply_earth_theme():
     st.markdown('''
 <style>
+/* Remove Streamlit's top navigation chrome. */
+[data-testid="stHeader"],
+[data-testid="stSidebarNav"] { display: none !important; }
+
 /* Hide the heading permalink icon in the hero. */
 .earth-hero a[href^="#"],
 .earth-hero [data-testid="stHeaderActionElements"],
