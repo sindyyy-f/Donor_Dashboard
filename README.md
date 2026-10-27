@@ -1,8 +1,8 @@
-# Nonprofit Donor Engagement & Retention Dashboard
+# Environmental Nonprofit Donor Engagement & Retention Dashboard
 
 ## Project Overview
 
-The Nonprofit Donor Engagement & Retention Dashboard is a decision-support application designed to help nonprofit staff understand donor activity, donation trends, retention, and possible donor inactivity.
+This dashboard helps an environmental nonprofit monitor donation activity, understand donor engagement, identify donors who may be at risk of disengaging, and forecast future donation growth.
 
 The project uses synthetic donor data and does not contain real names, contact information, payment information, or other personally identifiable information.
 
@@ -10,16 +10,45 @@ The project uses synthetic donor data and does not contain real names, contact i
 
 The dashboard includes:
 
-- Total number of donors
-- Total number of donations
-- Total and average donation amounts
-- Donations grouped by campaign
-- Monthly donation trends
-- Rolling 12-month donor retention
-- Rule-based donor engagement status
-- Machine-learning inactivity-risk predictions
-- A ranked list of donors who may need attention
-- Recent donation records
+- Donor counts, donation counts, and total and average donation amounts
+- Three compact charts for campaign totals, monthly donation trends, and donor engagement, with descriptions and visible legends
+- Rolling 12-month donor retention below the donation and engagement overview
+- A ranked Donors Needing Attention table with green row styling and highlighted model risk scores
+- An interactive 3?12 month donation forecast, defaulting to 12 months
+- A campaign filter specific to the forecast and a ?20% to +20% what-if adjustment
+- Forecast totals, growth comparisons, chart views, an optional upper forecast bound, and an optional forecast table
+- An environmental theme with trees, an animated river, falling leaves and acorns, and dark-green text
+- A full-width footer disclosing that all data is synthetically generated
+
+The donor-risk model still runs behind the attention table. Its performance cards, confusion matrix, and prediction-count boxes are not displayed. The recent donation records section and general dashboard filters are also not displayed.
+
+## Interactive Donation Forecast
+
+The **Interactive Forecast Controls** section provides:
+
+| Control | Behavior |
+|---|---|
+| Number of Months to Forecast | Select 3?12 future months; defaults to 12 |
+| What-If Donation Adjustment | Adjust the baseline by ?20% to +20%; defaults to 0% |
+| Campaign | Use all campaigns or rebuild the forecast for one campaign |
+| Chart View | Show the baseline, what-if scenario, or both; defaults to both |
+| Show Upper Forecast Bound | Toggle the approximate upper bound; visible by default |
+| Show Forecast Table | Toggle the monthly forecast table; visible by default |
+| Reset Forecast Controls | Restore all defaults using Streamlit session state |
+
+The baseline uses Ridge regression with a linear monthly trend and annual seasonal features. Monthly totals include zero-donation months within the observed history. A campaign's history extends to the latest month in the complete dataset, including trailing months with no donations. At least 18 monthly observations and six months with donations are required; insufficient data produces a warning instead of a forecast.
+
+The last three historical months form a chronological holdout for MAE and RMSE evaluation. The final model is then fitted on all available history to generate a cached 12-month baseline. Changing the selected horizon slices that baseline; changing the scenario adjustment does not retrain the model. Campaign changes use a separate cached forecast.
+
+```text
+Adjusted forecast = Baseline forecast ? (1 + adjustment percentage / 100)
+```
+
+Baseline and adjusted totals are compared with actual donations from the immediately preceding equivalent number of months. Growth is unavailable when the previous-period total is zero. The selected forecast dates and comparison dates are shown explicitly.
+
+The chart displays historical actuals as a solid dark-blue line, the baseline as a dashed orange line, and the what-if scenario as a dashed green line. A vertical marker identifies the forecast start. The x-axis is labeled Year-Month. The table contains forecast month, baseline forecast, adjustment percentage, adjusted forecast, and upper bound. No lower bound is displayed or calculated.
+
+The upper bound is an approximate error-based limit derived from holdout RMSE and increasing with the forecast horizon. It applies to the baseline only and is not a calibrated confidence interval or guaranteed limit. The latest recorded month may be incomplete. Forecasts are an academic prototype based on synthetic data, not guaranteed financial projections.
 
 ## Technology Used
 
@@ -145,6 +174,7 @@ The dashboard calls the model’s output a **Model Risk Score**. This score is a
 ## Responsible Use and Limitations
 
 - The project uses synthetic data only.
+- Donation forecasts and what-if scenarios are academic estimates, not guaranteed financial projections.
 - The model is trained on a small dataset.
 - The test set contains only 20 donor examples.
 - The model may incorrectly flag active donors as at risk.
@@ -157,7 +187,12 @@ The dashboard calls the model’s output a **Model Risk Score**. This score is a
 
 | File or Folder | Purpose |
 |---|---|
-| `app.py` | Runs the Streamlit dashboard |
+| `app.py` | Runs the dashboard, donor metrics, and attention table |
+| `theme.py` | Defines the environmental theme, animated landscape, and section styling |
+| `.streamlit/config.toml` | Sets native Streamlit colors and readable dark-green text |
+| `forecast.py` | Aggregates campaign history, trains monthly forecasts, and calculates scenarios |
+| `forecast_ui.py` | Provides cached forecasting, interactive controls, charts, and tables |
+| `test_forecast.py` | Tests forecasts, adjustments, filtering, caching, reset, and display behavior |
 | `database.py` | Creates the MySQL database connection |
 | `model.py` | Builds, evaluates, and applies the ML model |
 | `analysis.py` | Performs basic donor data analysis |
@@ -180,6 +215,7 @@ Open a PowerShell terminal inside the project folder and run:
 
 ```powershell
 python -m venv .venv
+```
 
 The following commands use the virtual environment directly, so activation is not required.
 
@@ -252,10 +288,10 @@ The terminal should confirm that the database connection works.
 ### 8. Run the Automated Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest test_project.py -v
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The project contains nine automated tests covering:
+The full suite contains 33 test cases covering:
 
 - Database connection
 - Expected database record counts
@@ -266,11 +302,17 @@ The project contains nine automated tests covering:
 - ML training-data integrity
 - ML recall performance target
 - Current prediction results
+- Forecast horizons and chronological dates
+- Zero, positive, and negative scenario adjustments and unchanged baselines
+- Nonnegative forecasts and campaign isolation
+- Missing donation months and insufficient-data warnings
+- Forecast chart views, colors, and upper-bound display
+- Cached model reuse, control reset, and forecast table visibility
 
 Expected result:
 
 ```text
-9 passed
+33 passed
 ```
 
 ### 9. Run the Dashboard

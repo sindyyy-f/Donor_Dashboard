@@ -1,7 +1,12 @@
+from html import escape
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from theme import apply_earth_theme, style_chart, earth_section
+
+from forecast_ui import render_forecast
 from database import get_connection
 from model import (
     build_current_features,
@@ -12,12 +17,27 @@ from model import (
 
 
 st.set_page_config(
-    page_title="Donor Dashboard",
+    page_title="Environmental Nonprofit Donor Engagement & Retention Dashboard",
     layout="wide"
 )
 
-st.title("Nonprofit Donor Engagement & Retention Dashboard")
-st.write("Overview of synthetic donor and donation data.")
+apply_earth_theme()
+
+
+def render_data_disclosure():
+    st.markdown(
+        """
+        <footer class="data-disclosure-footer">
+            <strong>Data Disclosure</strong>
+            <p>All data displayed in this dashboard was synthetically generated
+            for educational and demonstration purposes. Donor and donation
+            records do not represent real people, organizations, or transactions.</p>
+        </footer>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 
 
 # Load data from MySQL
@@ -149,44 +169,17 @@ else:
     retention_rate = 0
 
 
-# Display metric cards
+with earth_section("summary"):
+    st.subheader("Community Giving at a Glance")
 
-column1, column2, column3, column4 = st.columns(4)
+    # Display metric cards
 
-column1.metric("Total Donors", total_donors)
-column2.metric("Number of Donations", number_of_donations)
-column3.metric("Total Donated", f"${total_donated:,.2f}")
-column4.metric("Average Donation", f"${average_donation:,.2f}")
+    column1, column2, column3, column4 = st.columns(4)
 
-
-# Display retention metrics
-
-st.subheader("Donor Retention")
-
-retention_column1, retention_column2, retention_column3 = (
-    st.columns(3)
-)
-
-retention_column1.metric(
-    "Previous 12-Month Donors",
-    previous_donor_count
-)
-
-retention_column2.metric(
-    "Retained Donors",
-    retained_donor_count
-)
-
-retention_column3.metric(
-    "Retention Rate",
-    f"{retention_rate:.1f}%"
-)
-
-st.caption(
-    "Retention rate is the percentage of donors from the previous "
-    "12-month period who also donated during the most recent "
-    "12-month period."
-)
+    column1.metric("Total Donors", total_donors)
+    column2.metric("Number of Donations", number_of_donations)
+    column3.metric("Total Donated", f"${total_donated:,.2f}")
+    column4.metric("Average Donation", f"${average_donation:,.2f}")
 
 
 # Chart 1: Total donations by campaign
@@ -214,10 +207,7 @@ campaign_chart = px.bar(
     }
 )
 
-st.plotly_chart(
-    campaign_chart,
-    use_container_width=True
-)
+
 
 
 # Chart 2: Monthly donations for the most recent year
@@ -263,10 +253,7 @@ monthly_chart = px.line(
     }
 )
 
-st.plotly_chart(
-    monthly_chart,
-    use_container_width=True
-)
+
 
 
 # Calculate rule-based donor engagement
@@ -324,143 +311,123 @@ engagement_chart = px.pie(
     title="Rule-Based Donor Engagement Status",
     color="engagement_status",
     color_discrete_map={
-        "Active": "green",
-        "At Risk": "red"
+        "Active": "#47745b",
+        "At Risk": "#af684b"
     }
 )
 
-st.plotly_chart(
-    engagement_chart,
-    use_container_width=True
-)
 
 
-# Explain the rule-based definitions
 
-st.markdown("### Engagement Status Key")
-
-st.markdown(
-    """
-    🟢 **Active:** Donor has donated within the last 9 months.  
-    🔴 **At Risk:** Donor has not donated within the last 9 months.
-    """
-)
-
-# Machine-learning prediction section
-
-st.divider()
-st.header("Machine-Learning Predictions")
-
-st.write(
-    "The logistic regression model uses historical donation "
-    "behavior to estimate which donors may become inactive. "
-    "These predictions are separate from the nine-month "
-    "rule-based engagement status."
-)
-
-st.caption(
-    f"Historical snapshot: "
-    f"{model_snapshot_date.strftime('%B %d, %Y')} | "
-    f"Outcome period end: "
-    f"{model_outcome_end.strftime('%B %d, %Y')} | "
-    f"Current prediction date: "
-    f"{model_prediction_date.strftime('%B %d, %Y')}"
-)
-
-
-# Display model-performance metrics
-
-average_cv_recall = (
-    model_results["cv_recall_scores"].mean()
-)
-
-model_column1, model_column2, model_column3 = (
-    st.columns(3)
-)
-
-model_column1.metric(
-    "Model Accuracy",
-    f"{model_results['accuracy']:.1%}"
-)
-
-model_column2.metric(
-    "At-Risk Precision",
-    f"{model_results['precision']:.1%}"
-)
-
-model_column3.metric(
-    "At-Risk Recall",
-    f"{model_results['recall']:.1%}"
-)
-
-model_column4, model_column5 = st.columns(2)
-
-model_column4.metric(
-    "At-Risk F1 Score",
-    f"{model_results['f1']:.1%}"
-)
-
-model_column5.metric(
-    "Average Cross-Validation Recall",
-    f"{average_cv_recall:.1%}"
-)
-
-
-# Display confusion matrix
-
-st.subheader("Model Confusion Matrix")
-
-confusion_matrix_table = pd.DataFrame(
-    model_results["confusion_matrix"],
-    index=[
-        "Actual Not At Risk",
-        "Actual At Risk"
-    ],
-    columns=[
-        "Predicted Not At Risk",
-        "Predicted At Risk"
+with earth_section("charts"):
+    # Display compact charts with titles and explanations.
+    st.subheader("Donation & Engagement Overview")
+    chart_columns = st.columns(3, gap="medium")
+    chart_details = [
+        (
+            campaign_chart,
+            "Donations by Campaign",
+            "Compares the total amount raised by each campaign across all donation records."
+        ),
+        (
+            monthly_chart,
+            f"Monthly Donations ({latest_year})",
+            "Shows donation totals by month in the latest year, highlighting seasonal changes and quieter months."
+        ),
+        (
+            engagement_chart,
+            "Donor Engagement",
+            "Shows how many donors gave within the last nine months (Active) and how many have not (At Risk), measured from the latest donation date."
+        ),
     ]
-)
+    for column, (figure, title, description) in zip(chart_columns, chart_details):
+        with column, earth_section(f"chart_{title}"):
+            st.markdown(
+                f'<div class="chart-heading"><h4>{escape(title)}</h4>'
+                f'<p>{escape(description)}</p></div>',
+                unsafe_allow_html=True,
+            )
+            style_chart(figure)
+            figure.update_layout(
+                title=dict(text=""), height=340, showlegend=True,
+                margin=dict(t=55, b=80, l=45, r=20),
+                legend=dict(
+                    title_text="", orientation="h", x=0, y=1.18,
+                    xanchor="left", yanchor="top",
+                    font=dict(size=14, color="#203b2c"),
+                    bgcolor="#edf3e5", bordercolor="#7c9e70", borderwidth=1,
+                    itemsizing="constant",
+                ),
+            )
+            if figure is engagement_chart:
+                figure.update_traces(
+                    textinfo="percent", textposition="outside",
+                    textfont=dict(size=16, color="#173d29"),
+                    outsidetextfont=dict(size=16, color="#173d29"),
+                    automargin=True,
+                    hovertemplate="%{label}<br>%{value}<br>%{percent}<extra></extra>",
+                    marker=dict(line=dict(color="#fffcf5", width=2)),
+                )
+                key_text = (
+                    '<strong>Engagement Status Key</strong>'
+                    '<p><span class="legend-dot active"></span><b>Active:</b> Donated within the last 9 months.</p>'
+                    '<p><span class="legend-dot risk"></span><b>At Risk:</b> No donation within the last 9 months.</p>'
+                )
+            elif figure is campaign_chart:
+                figure.update_traces(
+                    name="Total donated", showlegend=True, marker_color="#47745b",
+                    hovertemplate="%{x}<br>$%{y:,.2f}<extra></extra>",
+                )
+                key_text = (
+                    '<strong>Campaign Chart Key</strong>'
+                    '<p><span class="legend-dot active"></span><b>Bars:</b> Total dollars donated to each campaign.</p>'
+                    '<p>Taller bars indicate more funds raised.</p>'
+                )
+            else:
+                figure.update_traces(
+                    name="Monthly total", showlegend=True,
+                    hovertemplate="%{x}<br>$%{y:,.2f}<extra></extra>",
+                )
+                key_text = (
+                    '<strong>Monthly Chart Key</strong>'
+                    '<p><span class="legend-dot river"></span><b>Line &amp; dots:</b> Total dollars donated each month.</p>'
+                    '<p>Higher points indicate larger monthly totals.</p>'
+                )
+            st.plotly_chart(figure, use_container_width=True, theme=None)
+            st.markdown(f'<div class="chart-key">{key_text}</div>', unsafe_allow_html=True)
 
-st.dataframe(
-    confusion_matrix_table,
-    use_container_width=True
-)
-
-st.caption(
-    "Rows show the actual outcome. Columns show the model's "
-    "prediction. The model correctly identified 11 of the 12 "
-    "at-risk donors in the reserved test group."
-)
 
 
-# Display current ML prediction counts
 
-ml_at_risk_count = len(
-    ml_predictions[
-        ml_predictions["ml_prediction"] == "At Risk"
-    ]
-)
+with earth_section("retention"):
+    # Display retention metrics
 
-ml_not_at_risk_count = len(
-    ml_predictions[
-        ml_predictions["ml_prediction"] == "Not At Risk"
-    ]
-)
+    st.subheader("Donor Retention")
 
-st.subheader("Current Model Results")
+    retention_column1, retention_column2, retention_column3 = (
+        st.columns(3)
+    )
 
-prediction_column1, prediction_column2 = st.columns(2)
+    retention_column1.metric(
+        "Previous 12-Month Donors",
+        previous_donor_count
+    )
 
-prediction_column1.metric(
-    "ML Predicted At Risk",
-    ml_at_risk_count
-)
+    retention_column2.metric(
+        "Retained Donors",
+        retained_donor_count
+    )
 
-prediction_column2.metric(
-    "ML Predicted Not At Risk",
-    ml_not_at_risk_count
-)
+    retention_column3.metric(
+        "Retention Rate",
+        f"{retention_rate:.1f}%"
+    )
+
+    st.caption(
+        "Retention rate is the percentage of donors from the previous "
+        "12-month period who also donated during the most recent "
+        "12-month period."
+    )
 
 
 # Prepare the ML at-risk table
@@ -490,54 +457,54 @@ ml_at_risk_donors = ml_at_risk_donors.rename(
     }
 )
 
-st.subheader("Donors Needing Attention")
-st.caption(
-    "This ranked list is based on the machine-learning model. "
-    "Higher risk scores indicate a greater estimated risk of inactivity.")
+with earth_section("attention"):
+    st.subheader("Donors Needing Attention")
+    st.caption(
+        "This ranked list is based on the machine-learning model. "
+        "Higher risk scores indicate a greater estimated risk of inactivity.")
 
-st.dataframe(
-    ml_at_risk_donors[
+    attention_table = ml_at_risk_donors[
         [
-            "Donor ID",
-            "Donor Type",
-            "Last Donation Date",
-            "Days Since Last Donation",
-            "Total Donations",
-            "Donations in Last 12 Months",
-            "Model Risk Score (%)",
-            "ML Prediction"
+            "Donor ID", "Donor Type", "Last Donation Date",
+            "Days Since Last Donation", "Total Donations",
+            "Model Risk Score (%)", "ML Prediction",
         ]
-    ],
-    use_container_width=True,
-    hide_index=True
-)
+    ].sort_values("Model Risk Score (%)", ascending=False).reset_index(drop=True)
 
-st.info(
-    "The Model Risk Score is an estimate used to rank donors "
-    "for staff review. It is not a guaranteed probability and "
-    "should not be used to make automatic decisions or contact "
-    "donors without human review."
-)
+    def attention_row_style(row):
+        background = "#f0f5e9" if row.name % 2 == 0 else "#e1ecd7"
+        return [f"background-color: {background}; color: #203b2c;" for _ in row]
+
+    styled_attention = (
+        attention_table.style
+        .apply(attention_row_style, axis=1)
+        .map(
+            lambda score: "background-color: #294d3b; color: #f0f5e9; font-weight: bold;"
+            if score >= 75 else "background-color: #c2d7af; color: #203b2c; font-weight: bold;",
+            subset=["Model Risk Score (%)"],
+        )
+        .format({"Model Risk Score (%)": "{:.1f}"})
+    )
+    st.dataframe(
+        styled_attention,
+        width="stretch", hide_index=True,
+        column_config={
+            "Model Risk Score (%)": st.column_config.NumberColumn(
+                "Model Risk Score (%)", format="%.1f",
+                help="Estimated inactivity risk, ranked highest first. Darker green highlights scores of 75% or more.",
+            ),
+        },
+    )
+    st.caption("Darker green highlights model risk scores of 75% or more. Donors are ranked by highest estimated risk.")
+
+    st.info(
+        "The Model Risk Score is an estimate used to rank donors "
+        "for staff review. It is not a guaranteed probability and "
+        "should not be used to make automatic decisions or contact "
+        "donors without human review."
+    )
 
 
-# Display the 10 most recent donation records
+render_forecast(donations)
 
-recent_donations = donations.sort_values(
-    by=[
-        "donation_date",
-        "donation_id"
-    ],
-    ascending=[
-        False,
-        False
-    ]
-).head(10)
-
-st.divider()
-st.subheader("Recent Donation Records")
-
-st.dataframe(
-    recent_donations,
-    use_container_width=True,
-    hide_index=True
-)
+render_data_disclosure()
