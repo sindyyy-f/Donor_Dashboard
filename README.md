@@ -76,6 +76,16 @@ The upper bound is an approximate error-based limit derived from the holdout RMS
 
 The latest recorded month may be incomplete, which can affect forecast accuracy. All forecasts are academic prototypes based on synthetic data and are not guaranteed financial projections.
 
+### Separate Forecast Validation
+
+`forecast_validation.py` evaluates donations across all campaigns using a chronological split: earlier months train the model, and later months test it. Histories with at least 18 monthly observations use the final six months for testing. Shorter histories use three test months and require at least four months in total; these shorter histories remain below the dashboard's reliability threshold.
+
+The script compares ridge regression with a persistence baseline that repeats the last training month's donation total for every test month. Both models produce the entire test-period forecast at the end of training, without using test-period actuals or updating during testing.
+
+The terminal report includes training and testing date ranges, month counts, MAE and RMSE for both models, whether ridge performs better on each metric, and a monthly table of actual donations, predictions, and absolute ridge errors. Lower MAE and RMSE indicate smaller errors; ridge is not guaranteed to outperform the baseline.
+
+This separate evaluation uses six test months when sufficient history is available. The dashboard's built-in evaluation continues to use the final three months before refitting on all history for its future forecast.
+
 ## Technology Used
 
 - Python 3.12
@@ -219,7 +229,9 @@ The dashboard calls the model's output a **Model Risk Score**. This score is an 
 | `.streamlit/config.toml` | Sets Streamlit colors and readable dark-green text |
 | `forecast.py` | Aggregates campaign history, trains monthly forecasts, and calculates scenarios |
 | `forecast_ui.py` | Provides cached forecasting, interactive controls, charts, and tables |
+| `forecast_validation.py` | Compares ridge forecasts with a persistence baseline using chronological MAE and RMSE evaluation |
 | `test_forecast.py` | Tests forecasts, adjustments, filtering, caching, reset behavior, and display behavior |
+| `test_forecast_validation.py` | Tests chronological splits, error metrics, baseline calculations, prevention of test-data leakage, terminal output, and connection cleanup |
 | `database.py` | Creates the MySQL database connection |
 | `model.py` | Builds, evaluates, and applies the donor-risk machine-learning model |
 | `analysis.py` | Performs donor analysis, summary calculations, and retention calculations |
@@ -320,7 +332,7 @@ The terminal should confirm that the database connection works.
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The full test suite contains 33 test cases covering:
+The full test suite contains 45 test cases covering:
 
 - Database connection
 - Expected database record counts
@@ -338,11 +350,15 @@ The full test suite contains 33 test cases covering:
 - Missing donation months and insufficient-data warnings
 - Forecast chart views, colors, and upper-bound display
 - Cached model reuse, control reset behavior, and forecast-table visibility
+- Chronological validation splits and rejection of insufficient or unordered history
+- Validation error metrics and persistence-baseline calculations
+- Verification that test-period actuals do not affect validation predictions
+- Validation terminal output and database connection cleanup
 
 Expected result:
 
 ```text
-33 passed
+45 passed
 ```
 
 ### 9. Run the Dashboard
@@ -358,6 +374,16 @@ http://localhost:8501
 ```
 
 Open that address in a web browser to use the dashboard.
+
+### 10. Run the Separate Forecast Validation
+
+With MySQL running and the same `.env` configuration in place, run:
+
+```powershell
+.\.venv\Scripts\python.exe forecast_validation.py
+```
+
+Review the terminal report to compare ridge regression with the persistence baseline. This command evaluates historical predictions; it does not change dashboard controls or database records.
 
 ## Data Integrity Evidence
 
@@ -375,6 +401,8 @@ The automated tests verify that:
 - Forecast dates are chronological.
 - Forecast amounts are nonnegative.
 - Scenario adjustments do not change the original baseline forecast.
+- Forecast-validation training months precede testing months without overlap.
+- Changing test-period actuals does not change either model's validation predictions.
 
 ## Security and Privacy
 
